@@ -13,13 +13,48 @@ from typing import Any
 
 # Third-Party Libraries
 import paho.mqtt.client as mqtt
-from weewx import NEW_LOOP_PACKET  # type: ignore
+from weewx import NEW_LOOP_PACKET, NEW_ARCHIVE_RECORD  # type: ignore
 from weewx.engine import StdEngine, StdService  # type: ignore
 
 from . import ConfigPublisher, PacketPreprocessor, StatePublisher
 from .models import ExtensionConfig, MQTTConfig
 
 logger = logging.getLogger(__name__)
+
+# Measurements that should ONLY be published from archive records
+# These are typically aggregated values (max, avg) or calculated values
+# that don't appear in real-time LOOP packets
+ARCHIVE_ONLY_MEASUREMENTS = {
+    # Pressure measurements (not in LOOP)
+    'pressure',
+    'altimeter', 
+    'barometer',
+    
+    # Wind aggregates
+    'windGust',      # Max wind gust over archive interval
+    'windGustDir',   # Direction of max wind gust
+    'windrun',       # Total wind run over archive interval
+    
+    # Calculated environmental values
+    'dewpoint',
+    'appTemp',
+    'heatindex',
+    'humidex',
+    'windchill',     # May appear in LOOP but archive is more reliable
+    'inDewpoint',
+    'cloudbase',
+    
+    # Solar and ET
+    'maxSolarRad',
+    'ET',
+    
+    # Archive metadata
+    'interval',
+    
+    # Leaf wetness sensors (if present)
+    'leafWet1',
+    'leafWet2',
+}
 
 # TODO Add command topics to control configuration settings
 
@@ -85,6 +120,8 @@ class Controller(StdService):
 
         # Register the callbacks for loop packets
         self.bind(NEW_LOOP_PACKET, self.on_weewx_loop)
+        # Register for archive records to see what's in them
+        self.bind(NEW_ARCHIVE_RECORD, self.on_weewx_archive)
 
     def init_mqtt_client(self, mqtt_config: MQTTConfig):
         """Initialize the MQTT client."""
@@ -197,9 +234,36 @@ class Controller(StdService):
         # Add callbacks to config processing task
         config_future.add_done_callback(self.check_config_update)
 
+    def on_weewx_archive(self, event):
+        """Handle callback for WeeWX archive records.
+           Only processes measurements that are exclusive to archive records
+           to avoid overwriting real-time LOOP data with averaged values.
+        """
+        logger.debug("Received WeeWX archive record")
+        logger.debug(f"Archive record contents: {event.record}")
+    
+        if self.mqtt_client.is_connected():
+            # Filter archive record to only include archive-only measurements
+            archive_only_record = {
+                key: value for key, value in event.record.items()
+                if key in ARCHIVE_ONLY_MEASUREMENTS
+            }
+        
+            if archive_only_record:
+                logger.debug(f"Processing archive-only measurements: {list(archive_only_record.keys())}")
+                preprocessor_future = self.executor.submit(
+                    self.packet_preprocessor.process_packet, archive_only_record
+                )
+                preprocessor_future.add_done_callback(self.preprocessor_complete)
+            else:
+                logger.debug("No archive-only measurements to process")
+        else:
+            logger.warning("MQTT client is not connected, skipping archive record processing")
+
     def on_weewx_loop(self, event):
         """Handle callback for WeeWX loop packets."""
         logger.debug("Received WeeWX loop packet")
+        logger.debug(f"Loop packet contents: {event.packet}")
         if self.mqtt_client.is_connected():
             preprocessor_future = self.executor.submit(
                 self.packet_preprocessor.process_packet, event.packet
