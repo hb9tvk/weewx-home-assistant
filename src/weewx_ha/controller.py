@@ -25,16 +25,21 @@ logger = logging.getLogger(__name__)
 # These are typically aggregated values (max, avg) or calculated values
 # that don't appear in real-time LOOP packets
 ARCHIVE_ONLY_MEASUREMENTS = {
+    # Required metadata (always needed)
+    'usUnits',       # Unit system indicator (required by WeeWX)
+    'dateTime',      # Timestamp (required)
+    'interval',      # Archive interval
+
     # Pressure measurements (not in LOOP)
     'pressure',
-    'altimeter', 
+    'altimeter',
     'barometer',
-    
+
     # Wind aggregates
     'windGust',      # Max wind gust over archive interval
     'windGustDir',   # Direction of max wind gust
     'windrun',       # Total wind run over archive interval
-    
+
     # Calculated environmental values
     'dewpoint',
     'appTemp',
@@ -43,14 +48,11 @@ ARCHIVE_ONLY_MEASUREMENTS = {
     'windchill',     # May appear in LOOP but archive is more reliable
     'inDewpoint',
     'cloudbase',
-    
+
     # Solar and ET
     'maxSolarRad',
     'ET',
-    
-    # Archive metadata
-    'interval',
-    
+
     # Leaf wetness sensors (if present)
     'leafWet1',
     'leafWet2',
