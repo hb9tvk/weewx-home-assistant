@@ -159,6 +159,12 @@ class Controller(StdService):
             client.publish(self.availability_topic, "online", qos=1, retain=True)
             # Subscribe to the homeassistant birth message
             client.subscribe(f"{self.config.discovery_topic_prefix}/status", qos=1)
+            # Re-publish discovery configurations on every (re)connect so that
+            # Home Assistant picks them up even if its birth message was missed.
+            if self.config_publisher.seen_measurements:
+                logger.info("Re-publishing discovery configurations after (re)connect")
+                future = self.executor.submit(self.config_publisher.publish_discovery)
+                future.add_done_callback(self.check_future_errors)
         else:
             logger.error(f"Failed to connect to MQTT broker, return code {reason_code}")
 
