@@ -366,6 +366,7 @@ KEY_CONFIG: dict[str, Any] = {
     "dayRain": {
         "metadata": {
             "device_class": "precipitation",
+            "state_class": "total_increasing",
             "icon": "mdi:cup-water",
             "name": "Day Rainfall",
         },
